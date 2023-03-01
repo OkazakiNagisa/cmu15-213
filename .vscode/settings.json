@@ -1,0 +1,7 @@
+{
+    "cmake.buildDirectory": "${workspaceFolder}/build",
+    "cmake.debugConfig": {
+        "stopAtEntry": false,
+        "console": "integratedTerminal"
+    }
+}
