@@ -348,9 +348,9 @@ bool do_reverse(int argc, char *argv[]) {
         report(3, "Warning: Calling reverse on null queue");
     error_check();
     set_noallocate_mode(true);
-    arm_timeout();
+    // arm_timeout();
     queue_reverse(q);
-    cancel_timeout();
+    // cancel_timeout();
     set_noallocate_mode(false);
     show_queue(3);
     return !error_check();
