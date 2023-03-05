@@ -151,8 +151,10 @@ bool queue_remove_head(queue_t *q, char *buf, size_t bufsize) {
     if (!q || !q->size)
         return false;
     list_ele_t *p_to_delete = q->head;
-    strncpy(buf, p_to_delete->value, bufsize - 1);
-    buf[bufsize - 1] = 0;
+    if (buf) {
+        strncpy(buf, p_to_delete->value, bufsize - 1);
+        buf[bufsize - 1] = 0;
+    }
     free(p_to_delete->value);
     q->head = q->head->next;
     free(p_to_delete);
@@ -171,6 +173,8 @@ bool queue_remove_head(queue_t *q, char *buf, size_t bufsize) {
  *         0 if q is NULL or empty
  */
 size_t queue_size(queue_t *q) {
+    if (!q)
+        return 0;
     /* You need to write the code for this function */
     /* Remember: It should operate in O(1) time */
     return q->size;
@@ -186,12 +190,17 @@ size_t queue_size(queue_t *q) {
  * @param[in] q The queue to reverse
  */
 void queue_reverse(queue_t *q) {
+    if (!q)
+        return;
     /* You need to write the code for this function */
-    while (q->head) {
+    list_ele_t *new_tail = q->head;
+    q->tail = NULL; // q->tail not nulled automatically
+    while (q->head != NULL) {
         list_ele_t *p = q->head;
         q->head = p->next;
         p->next = q->tail;
         q->tail = p;
     }
-    q->tail = NULL;
+    q->head = q->tail;
+    q->tail = new_tail;
 }
