@@ -111,6 +111,8 @@ CAUTION:
   must remove all your debugging printf's again before submitting your
   code or testing it with dlc or the BDD checker.  */
 
+#include <limits.h>
+#include <stdio.h>
 extern int printf(const char *, ...);
 
 /* Edit the functions below.  Good luck!  */
@@ -142,7 +144,7 @@ extern int printf(const char *, ...);
  *   Rating: 2
  */
 long implication(long x, long y) {
-    return 2L;
+    return (!(x ^ y)) | y;
 }
 /*
  * leastBitPos - return a mask that marks the position of the
@@ -153,7 +155,8 @@ long implication(long x, long y) {
  *   Rating: 2
  */
 long leastBitPos(long x) {
-    return 2;
+    // (x - 1) XOR x = 000000111, where 1st 1 is least bit of x
+    return ((x + ~0L) ^ x) & x;
 }
 /*
  * distinctNegation - returns 1 if x != -x.
@@ -163,7 +166,7 @@ long leastBitPos(long x) {
  *   Rating: 2
  */
 long distinctNegation(long x) {
-    return 2;
+    return !!((~x + 1) ^ x);
 }
 /*
  * fitsBits - return 1 if x can be represented as an
@@ -175,7 +178,7 @@ long distinctNegation(long x) {
  *   Rating: 2
  */
 long fitsBits(long x, long n) {
-    return 2L;
+    return !(x >> (n - 1)) | !(~(x >> (n - 1)));
 }
 // 3
 /*
@@ -190,7 +193,7 @@ long fitsBits(long x, long n) {
  *  Rating: 4
  */
 long trueFiveEighths(long x) {
-    return 2L;
+    return (x >> 1) + (x >> 3) + ((x >> 63) & 1) - !(x ^ (1L << 63));
 }
 /*
  * addOK - Determine if can compute x+y without overflow
@@ -201,7 +204,8 @@ long trueFiveEighths(long x) {
  *   Rating: 3
  */
 long addOK(long x, long y) {
-    return 2L;
+    return ((~((x | y) >> 63) & ~(x + y) >> 63) & 1) + !!((x ^ y) >> 63) +
+           ((((x & y) >> 63) & (x + y) >> 63) & 1);
 }
 /*
  * isPower2 - returns 1 if x is a power of 2, and 0 otherwise
@@ -212,7 +216,11 @@ long addOK(long x, long y) {
  *   Rating: 3
  */
 long isPower2(long x) {
-    return 2L;
+    // this is if even
+    // return ((x ^ 1) & ~(x >> 63) & 1) - !(x ^ 0);
+
+    // x & (x-1) = 0
+    return (!(x & (x + ~0))) & (~(x >> 63) & 1) & !!x;
 }
 /*
  * rotateLeft - Rotate x to the left by n
@@ -224,7 +232,7 @@ long isPower2(long x) {
  *   Rating: 3
  */
 long rotateLeft(long x, long n) {
-    return 2;
+    return (x << n) | ((x >> (64 - n)) & ((1ll << n) - 1));
 }
 // 4
 /*
@@ -245,7 +253,12 @@ long isPalindrome(long x) {
  *   Rating: 4
  */
 long bitParity(long x) {
-    return 2L;
+    x ^= x >> 32;
+    x ^= x >> 16;
+    x ^= x >> 8;
+    x ^= x >> 4;
+    x ^= x >> 2;
+    return (x ^ x >> 1) & 1;
 }
 /*
  * absVal - absolute value of x
@@ -256,5 +269,5 @@ long bitParity(long x) {
  *   Rating: 4
  */
 long absVal(long x) {
-    return 2L;
+    return ((~x + 1) & (x >> 63)) + (x & ~(x >> 63));
 }
