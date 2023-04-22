@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
-file(GLOB_RECURSE src_list LIST_DIRECTORIES false RELATIVE "${CMAKE_CURRENT_LIST_DIR}" "*.single.c*")
-foreach(v2 ${src_list})
-    set(target_name "pv.${v2}")
-    string(REGEX REPLACE "/" "." target_name ${target_name})
-    add_executable(${target_name} "${CMAKE_CURRENT_LIST_DIR}/${v2}")
-endforeach()
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
+include_directories("${CMAKE_CURRENT_LIST_DIR}/include")
+
+add_targets(SCAN_SINGLE_FILE TARGET_PREFIX pv. SSF_PATTERN *.single.c)
