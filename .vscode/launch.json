@@ -7,18 +7,28 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "lab 0: qtest",
-            "program": "${workspaceFolder}/labs/0.cprogramminglab-handout/qtest",
+            "name": "LLDB: Current File",
+            "program": "${workspaceFolder}/${relativeFileDirname}/${fileBasenameNoExtension}",
             "args": [],
-            "cwd": "${workspaceFolder}/labs/0.cprogramminglab-handout"
+            "cwd": "${workspaceFolder}/${relativeFileDirname}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "lldb pv.test.single",
-            "program": "${workspaceFolder}/build/pv/pv.test.single.c",
-            "args": [],
-            "cwd": "${workspaceFolder}/build/pv"
+            "name": "LLDB: temp",
+            "program": "${workspaceFolder}/labs/4.cachelab-handout/csim",
+            "args": [
+                "-v",
+                "-s",
+                "4",
+                "-E",
+                "1",
+                "-b",
+                "4",
+                "-t",
+                "traces/yi.trace"
+            ],
+            "cwd": "${workspaceFolder}/labs/4.cachelab-handout"
         }
     ]
 }
