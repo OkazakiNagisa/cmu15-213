@@ -10,15 +10,12 @@ typedef unsigned int uint;
 const char ConstHelpString[] = "help string stub";
 const int ConstM = 64;
 
-typedef struct ProgramArgs
+struct ProgramArgs
 {
     bool Verbose;
     char TraceFilePath[256];
     int s, E, b;
-} ProgramArgs;
-
-ProgramArgs Args = {
-    .Verbose = false, .TraceFilePath = {0}, .s = 0, .E = 0, .b = 0};
+} Args = {.Verbose = false, .TraceFilePath = {0}, .s = 0, .E = 0, .b = 0};
 
 int ParseCommandLine(int argc, const char *argv[])
 {
@@ -115,7 +112,7 @@ typedef struct Cache
     CacheLine Lines[1];
 } Cache;
 
-Cache *CacheInit(int s, int E, int b)
+Cache *CacheNew(int s, int E, int b)
 {
     Cache *ret = NULL;
 
@@ -168,7 +165,8 @@ CacheFetchResult CacheFetch(Cache *cache, bool readAndWrite, uint address,
             blankLineIndex = i;
 
         if (cache->Lines[i].Valid &&
-            cache->Lines[i].TickSequence < cache->Lines[oldestLineIndex].TickSequence)
+            cache->Lines[i].TickSequence <
+                cache->Lines[oldestLineIndex].TickSequence)
             oldestLineIndex = i;
     }
 
@@ -253,7 +251,7 @@ int main(int argc, const char *argv[])
         exit(0);
 
     Trace *trace = ParseTracefile();
-    Cache *cache = CacheInit(Args.s, Args.E, Args.b);
+    Cache *cache = CacheNew(Args.s, Args.E, Args.b);
     SimulateResult result = Simulate(cache, trace);
     printSummary(result.Hits, result.Misses, result.Evictions);
 
