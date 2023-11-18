@@ -22,37 +22,9 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 char transpose_submit_desc[] = "Transpose submission";
 void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 {
-    // void trans(int M, int N, int A[N][M], int B[M][N]);
-    // trans(M, N, A, B);
-    // hits:869, misses:1184, evictions:1152
-
-    // for (int i = 0; i + 3 < N; i += 3)
-    // {
-    //     for (int j = 0; j + 3 < N; j += 3)
-    //     {
-    //         int a1 = A[i][j];
-    //         int a2 = A[i][j + 1];
-    //         int a3 = A[i][j + 2];
-    //         int a4 = A[i + 1][j];
-    //         int a5 = A[i + 1][j + 1];
-    //         int a6 = A[i + 1][j + 2];
-    //         int a7 = A[i + 2][j];
-    //         int a8 = A[i + 2][j + 1];
-    //         int a9 = A[i + 2][j + 2];
-    //         B[j][i] = a1;
-    //         B[j][i + 1] = a4;
-    //         B[j][i + 2] = a7;
-    //         B[j + 1][i] = a2;
-    //         B[j + 1][i + 1] = a5;
-    //         B[j + 1][i + 2] = a8;
-    //         B[j + 2][i] = a3;
-    //         B[j + 2][i + 1] = a6;
-    //         B[j + 2][i + 2] = a9;
-    //     }
-    // }
-    for (int i = 0; i + 4 < N; i += 4)
+    for (int i = 0; i + 3 < N; i += 4)
     {
-        for (int j = 0; j + 4 < N; j += 4)
+        for (int j = 0; j + 3 < M; j += 4)
         {
             int a11 = A[i + 0][j + 0];
             int a12 = A[i + 0][j + 1];
@@ -64,35 +36,39 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N])
             int a23 = A[i + 1][j + 2];
             int a24 = A[i + 1][j + 3];
 
-            int a31 = A[i + 2][j + 0];
-            int a32 = A[i + 2][j + 1];
-            int a33 = A[i + 2][j + 2];
-            int a34 = A[i + 2][j + 3];
-
-            int a41 = A[i + 3][j + 0];
-            int a42 = A[i + 3][j + 1];
-            int a43 = A[i + 3][j + 2];
-            int a44 = A[i + 3][j + 3];
-
             B[j + 0][i + 0] = a11;
             B[j + 0][i + 1] = a21;
-            B[j + 0][i + 2] = a31;
-            B[j + 0][i + 3] = a41;
 
             B[j + 1][i + 0] = a12;
             B[j + 1][i + 1] = a22;
-            B[j + 1][i + 2] = a32;
-            B[j + 1][i + 3] = a42;
 
             B[j + 2][i + 0] = a13;
             B[j + 2][i + 1] = a23;
-            B[j + 2][i + 2] = a33;
-            B[j + 2][i + 3] = a43;
 
             B[j + 3][i + 0] = a14;
             B[j + 3][i + 1] = a24;
-            B[j + 3][i + 2] = a34;
-            B[j + 3][i + 3] = a44;
+
+            a11 = A[i + 2][j + 0];
+            a12 = A[i + 2][j + 1];
+            a13 = A[i + 2][j + 2];
+            a14 = A[i + 2][j + 3];
+
+            a21 = A[i + 3][j + 0];
+            a22 = A[i + 3][j + 1];
+            a23 = A[i + 3][j + 2];
+            a24 = A[i + 3][j + 3];
+
+            B[j + 0][i + 2] = a11;
+            B[j + 0][i + 3] = a21;
+
+            B[j + 1][i + 2] = a12;
+            B[j + 1][i + 3] = a22;
+
+            B[j + 2][i + 2] = a13;
+            B[j + 2][i + 3] = a23;
+
+            B[j + 3][i + 2] = a14;
+            B[j + 3][i + 3] = a24;
         }
     }
 }

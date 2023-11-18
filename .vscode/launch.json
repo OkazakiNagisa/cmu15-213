@@ -16,18 +16,8 @@
             "type": "lldb",
             "request": "launch",
             "name": "LLDB: temp",
-            "program": "${workspaceFolder}/labs/4.cachelab-handout/csim",
-            "args": [
-                "-v",
-                "-s",
-                "4",
-                "-E",
-                "1",
-                "-b",
-                "4",
-                "-t",
-                "traces/yi.trace"
-            ],
+            "program": "${workspaceFolder}/labs/4.cachelab-handout/trans-my",
+            "args": [],
             "cwd": "${workspaceFolder}/labs/4.cachelab-handout"
         }
     ]
