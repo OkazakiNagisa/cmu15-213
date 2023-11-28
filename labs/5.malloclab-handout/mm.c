@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -94,16 +95,7 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+int32_t mm_check()
+{
+    return 0;
+}
