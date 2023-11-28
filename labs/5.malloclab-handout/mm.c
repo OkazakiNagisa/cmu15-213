@@ -9,15 +9,16 @@
  * NOTE TO STUDENTS: Replace this header comment with your own header
  * comment that gives a high level description of your solution.
  */
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
-#include <unistd.h>
 #include <string.h>
-#include <stdint.h>
+#include <unistd.h>
 
-#include "mm.h"
 #include "memlib.h"
+#include "mm.h"
 
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
@@ -35,20 +36,49 @@ team_t team = {
     /* Second member's email address (leave blank if none) */
     ""};
 
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
+#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
+#define HDRSIZE 4
+#define CHUNKSIZE (1 << 12)
 
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+typedef union
+{
+    struct
+    {
+        bool allocated : 1;
+        bool unused1 : 1;
+        bool unused2 : 1;
+        uint32_t blocksize : 29;
+    };
+    uint32_t data;
+} header_t, footer_t;
 
-
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+static char *heap_listp;
 
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
+    heap_listp = mem_sbrk(CHUNKSIZE);
+    if (heap_listp == (void *)-1)
+        return -1;
+
+    if ((uint64_t)heap_listp & (ALIGNMENT - 1))
+        heap_listp = (void *)(((uint64_t)heap_listp & ~(ALIGNMENT - 1)) + ALIGNMENT);
+
+    ((header_t *)heap_listp)->data = 0;
+    ((header_t *)heap_listp)->allocated = true;
+    ((footer_t *)heap_listp + 1)->data = 0;
+    ((footer_t *)heap_listp + 1)->allocated = true;
+    ((header_t *)heap_listp + 2)->data = 0;
+    ((header_t *)heap_listp + 2)->allocated = true;
+    ((footer_t *)heap_listp + 3)->data = 0;
+    ((footer_t *)heap_listp + 3)->allocated = true;
     return 0;
 }
 
@@ -61,8 +91,9 @@ void *mm_malloc(size_t size)
     int newsize = ALIGN(size + SIZE_T_SIZE);
     void *p = mem_sbrk(newsize);
     if (p == (void *)-1)
-	return NULL;
-    else {
+        return NULL;
+    else
+    {
         *(size_t *)p = size;
         return (void *)((char *)p + SIZE_T_SIZE);
     }
@@ -71,9 +102,7 @@ void *mm_malloc(size_t size)
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr)
-{
-}
+void mm_free(void *ptr) {}
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
@@ -86,10 +115,10 @@ void *mm_realloc(void *ptr, size_t size)
 
     newptr = mm_malloc(size);
     if (newptr == NULL)
-      return NULL;
+        return NULL;
     copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
     if (size < copySize)
-      copySize = size;
+        copySize = size;
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
