@@ -57,28 +57,31 @@ typedef union
     uint32_t data;
 } header_t, footer_t;
 
-static char *heap_listp;
+static char *heap_start;
 
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-    heap_listp = mem_sbrk(CHUNKSIZE);
-    if (heap_listp == (void *)-1)
+    heap_start = mem_sbrk(CHUNKSIZE);
+    if (heap_start == (void *)-1)
         return -1;
 
-    if ((uint64_t)heap_listp & (ALIGNMENT - 1))
-        heap_listp = (void *)(((uint64_t)heap_listp & ~(ALIGNMENT - 1)) + ALIGNMENT);
+    if ((uint64_t)heap_start & (ALIGNMENT - 1))
+        heap_start = (void *)(((uint64_t)heap_start & ~(ALIGNMENT - 1)) + ALIGNMENT);
 
-    ((header_t *)heap_listp)->data = 0;
-    ((header_t *)heap_listp)->allocated = true;
-    ((footer_t *)heap_listp + 1)->data = 0;
-    ((footer_t *)heap_listp + 1)->allocated = true;
-    ((header_t *)heap_listp + 2)->data = 0;
-    ((header_t *)heap_listp + 2)->allocated = true;
-    ((footer_t *)heap_listp + 3)->data = 0;
-    ((footer_t *)heap_listp + 3)->allocated = true;
+    ((header_t *)heap_start)->data = 0;
+    ((header_t *)heap_start)->allocated = true;
+    ((footer_t *)heap_start + 1)->data = 0;
+    ((footer_t *)heap_start + 1)->allocated = true;
+
+    header_t *epilogue = (header_t *)(heap_start + CHUNKSIZE - sizeof(header_t) * 2);
+
+    ((header_t *)epilogue)->data = 0;
+    ((header_t *)epilogue)->allocated = true;
+    ((footer_t *)epilogue + 1)->data = 0;
+    ((footer_t *)epilogue + 1)->allocated = true;
     return 0;
 }
 
