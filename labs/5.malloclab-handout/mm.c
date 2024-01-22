@@ -36,14 +36,13 @@ team_t team = {
     /* Second member's email address (leave blank if none) */
     ""};
 
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
-#define HDRSIZE 4
 #define CHUNKSIZE (1 << 12)
+
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(size) (((size_t)(size) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1))
+#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 typedef union
 {
@@ -52,12 +51,45 @@ typedef union
         bool allocated : 1;
         bool unused1 : 1;
         bool unused2 : 1;
-        uint32_t blocksize : 29;
+        // uint32_t blocksize : 29;
     };
-    uint32_t data;
-} header_t, footer_t;
+    uint32_t blocksize;
+} Header, Footer;
 
-static char *heap_start;
+typedef struct
+{
+    Header header;
+    unsigned char memory[1];
+} Block;
+
+typedef union
+{
+    size_t as_int;
+    void *as_ptr;
+    union
+    {
+        Header *asHeader;
+        Footer *asFooter;
+    };
+} Ptr;
+
+static void *heap_start;
+static void *heap_end;
+
+Ptr getPrologue()
+{
+    Ptr ret;
+    ret.as_int = ALIGN((size_t)heap_start);
+    return ret;
+}
+
+Ptr getEpilogue()
+{
+    Ptr ret;
+    ret.as_int = ALIGN((size_t)heap_end);
+    ret.asHeader -= 3;
+    return ret;
+}
 
 /*
  * mm_init - initialize the malloc package.
@@ -68,20 +100,44 @@ int mm_init(void)
     if (heap_start == (void *)-1)
         return -1;
 
-    if ((uint64_t)heap_start & (ALIGNMENT - 1))
-        heap_start = (void *)(((uint64_t)heap_start & ~(ALIGNMENT - 1)) + ALIGNMENT);
+    heap_end = heap_start + CHUNKSIZE;
+    // if ((uint64_t)heap_start & (ALIGNMENT - 1))
+    //     prologue =
+    //         (void *)(((uint64_t)heap_start & ~(ALIGNMENT - 1)) + ALIGNMENT);
+    // else
+    //     prologue = heap_start;
+    Ptr prologue = getPrologue();
+    prologue.as_int = ALIGN(heap_start);
 
-    ((header_t *)heap_start)->data = 0;
-    ((header_t *)heap_start)->allocated = true;
-    ((footer_t *)heap_start + 1)->data = 0;
-    ((footer_t *)heap_start + 1)->allocated = true;
+    prologue.asHeader->data = 0;
+    prologue.asHeader->allocated = true;
+    (prologue.asFooter + 1)->data = 0;
+    (prologue.asFooter + 1)->allocated = true;
 
-    header_t *epilogue = (header_t *)(heap_start + CHUNKSIZE - sizeof(header_t) * 2);
+    Ptr epilogue = getEpilogue();
 
-    ((header_t *)epilogue)->data = 0;
-    ((header_t *)epilogue)->allocated = true;
-    ((footer_t *)epilogue + 1)->data = 0;
-    ((footer_t *)epilogue + 1)->allocated = true;
+    epilogue.asHeader->data = 0;
+    epilogue.asHeader->allocated = true;
+    (epilogue.asFooter + 1)->data = 0;
+    (epilogue.asFooter + 1)->allocated = true;
+    return 0;
+}
+
+int extendSbrk(size_t size)
+{
+    assert(size == ALIGN(size));
+    Ptr origBrk;
+    origBrk.as_ptr = mem_sbrk(size);
+    if (origBrk.as_int == -1)
+        return -1;
+
+    Ptr origEpilogue = getEpilogue();
+    heap_end = heap_end + size;
+    Ptr epilogue = getEpilogue();
+    memcpy(epilogue.as_ptr, origEpilogue.as_ptr,
+           sizeof(Header) + sizeof(Footer));
+    memset(origEpilogue.as_ptr, 0, sizeof(Header) + sizeof(Footer));
+
     return 0;
 }
 
@@ -91,6 +147,14 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
+    Ptr currentBlock = getPrologue();
+    Ptr epilogue = getEpilogue();
+    while (currentBlock.as_ptr != epilogue.as_ptr)
+    {
+        if (!currentBlock.asHeader->allocated && currentBlock.asHeader->blocksize) {
+
+        }
+    }
     int newsize = ALIGN(size + SIZE_T_SIZE);
     void *p = mem_sbrk(newsize);
     if (p == (void *)-1)
@@ -127,7 +191,7 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
-int32_t mm_check()
+size_t mm_check()
 {
     return 0;
 }
