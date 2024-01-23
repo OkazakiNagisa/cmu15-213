@@ -53,7 +53,7 @@ typedef union
         bool unused2 : 1;
         // uint32_t blocksize : 29;
     };
-    uint32_t blocksize;
+    uint32_t data;
 } Header, Footer;
 
 typedef struct
@@ -89,6 +89,11 @@ Ptr getEpilogue()
     ret.as_int = ALIGN((size_t)heap_end);
     ret.asHeader -= 3;
     return ret;
+}
+
+uint32_t getHeaderBlocksize(Header *header)
+{
+    return header->data & ~0b111;
 }
 
 /*
@@ -151,8 +156,9 @@ void *mm_malloc(size_t size)
     Ptr epilogue = getEpilogue();
     while (currentBlock.as_ptr != epilogue.as_ptr)
     {
-        if (!currentBlock.asHeader->allocated && currentBlock.asHeader->blocksize) {
-
+        if (!currentBlock.asHeader->allocated &&
+            getHeaderBlocksize(currentBlock.asHeader) >= size)
+        {
         }
     }
     int newsize = ALIGN(size + SIZE_T_SIZE);
