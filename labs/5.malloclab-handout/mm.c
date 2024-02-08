@@ -73,21 +73,22 @@ typedef union
     };
 } Ptr;
 
-static void *heap_start;
+static void *true_heap_start;
+static void *heap_start; // aligned
 static void *heap_end;
 
 Ptr getPrologue()
 {
     Ptr ret;
-    ret.as_int = ALIGN((size_t)heap_start);
+    ret.as_ptr = heap_start;
     return ret;
 }
 
 Ptr getEpilogue()
 {
     Ptr ret;
-    ret.as_int = ALIGN((size_t)heap_end);
-    ret.asHeader -= 3;
+    ret.as_ptr = heap_end;
+    ret.asHeader -= 2;
     return ret;
 }
 
@@ -96,14 +97,33 @@ uint32_t getHeaderBlocksize(Header *header)
     return header->data & ~0b111;
 }
 
+Footer *getFooterFromHeader(Header *header)
+{
+    Ptr ret;
+    ret.as_ptr = header;
+    uint32_t blockSize = getHeaderBlocksize(header);
+    ret.as_int += sizeof(Header) + blockSize;
+    return ret.asFooter;
+}
+
+Header *getHeaderFromFooter(Footer *footer)
+{
+    Ptr ret;
+    ret.as_ptr = footer;
+    uint32_t blockSize = getHeaderBlocksize(footer);
+    ret.as_int -= sizeof(Footer) + blockSize;
+    return ret.asHeader;
+}
+
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-    heap_start = mem_sbrk(CHUNKSIZE);
-    if (heap_start == (void *)-1)
+    true_heap_start = mem_sbrk(CHUNKSIZE);
+    if (true_heap_start == (void *)-1)
         return -1;
+    heap_start = (void *)ALIGN((size_t)true_heap_start);
 
     heap_end = heap_start + CHUNKSIZE;
     // if ((uint64_t)heap_start & (ALIGNMENT - 1))
@@ -112,7 +132,6 @@ int mm_init(void)
     // else
     //     prologue = heap_start;
     Ptr prologue = getPrologue();
-    prologue.as_int = ALIGN(heap_start);
 
     prologue.asHeader->data = 0;
     prologue.asHeader->allocated = true;
@@ -125,25 +144,42 @@ int mm_init(void)
     epilogue.asHeader->allocated = true;
     (epilogue.asFooter + 1)->data = 0;
     (epilogue.asFooter + 1)->allocated = true;
+
+    Ptr blankArea;
+    blankArea.as_int = prologue.as_int + sizeof(Header) + sizeof(Footer);
+    // todo
+
     return 0;
 }
 
-int extendSbrk(size_t size)
+Ptr extendSbrk(size_t size)
 {
+    Ptr ret;
     assert(size == ALIGN(size));
     Ptr origBrk;
     origBrk.as_ptr = mem_sbrk(size);
     if (origBrk.as_int == -1)
-        return -1;
+    {
+        ret.as_int = -1;
+        return ret;
+    }
 
     Ptr origEpilogue = getEpilogue();
     heap_end = heap_end + size;
     Ptr epilogue = getEpilogue();
     memcpy(epilogue.as_ptr, origEpilogue.as_ptr,
            sizeof(Header) + sizeof(Footer));
-    memset(origEpilogue.as_ptr, 0, sizeof(Header) + sizeof(Footer));
 
-    return 0;
+    Ptr blankArea = origEpilogue;
+    blankArea.asHeader->data = size - sizeof(Header) - sizeof(Footer);
+    blankArea.asHeader->allocated = false;
+
+    Ptr blankAreaFooter;
+    blankAreaFooter.as_int = epilogue.as_int - sizeof(Footer);
+    blankAreaFooter.asFooter->data = size - sizeof(Header) - sizeof(Footer);
+    blankAreaFooter.asFooter->allocated = false;
+
+    return blankArea;
 }
 
 /*
@@ -159,16 +195,25 @@ void *mm_malloc(size_t size)
         if (!currentBlock.asHeader->allocated &&
             getHeaderBlocksize(currentBlock.asHeader) >= size)
         {
+            currentBlock.asHeader->allocated = true;
+            Footer *footer = getFooterFromHeader(currentBlock.asHeader);
+            footer->allocated = true; // todo
+            return currentBlock.as_ptr;
+        }
+        else
+        {
+            currentBlock.as_int += sizeof(Header) +
+                                   getHeaderBlocksize(currentBlock.asHeader) +
+                                   sizeof(Footer);
         }
     }
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
+    int newsize = ALIGN(size + sizeof(Header) + sizeof(Footer));
+    Ptr newBlockStart = extendSbrk(newsize);
+    if (newBlockStart.as_int == -1)
         return NULL;
     else
     {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
+        newBlockStart.asHeader->allocated = true; // todo
     }
 }
 
