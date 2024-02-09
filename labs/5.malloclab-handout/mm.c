@@ -77,14 +77,14 @@ static void *true_heap_start;
 static void *heap_start; // aligned
 static void *heap_end;
 
-Ptr getPrologue()
+Ptr MemGetPrologue()
 {
     Ptr ret;
     ret.as_ptr = heap_start;
     return ret;
 }
 
-Ptr getEpilogue()
+Ptr MemGetEpilogue()
 {
     Ptr ret;
     ret.as_ptr = heap_end;
@@ -92,25 +92,25 @@ Ptr getEpilogue()
     return ret;
 }
 
-uint32_t getHeaderBlocksize(Header *header)
+uint32_t HeaderGetBlocksize(Header *header)
 {
     return header->data & ~0b111;
 }
 
-Footer *getFooterFromHeader(Header *header)
+Footer *HeaderGetFooter(Header *header)
 {
     Ptr ret;
     ret.as_ptr = header;
-    uint32_t blockSize = getHeaderBlocksize(header);
+    uint32_t blockSize = HeaderGetBlocksize(header);
     ret.as_int += sizeof(Header) + blockSize;
     return ret.asFooter;
 }
 
-Header *getHeaderFromFooter(Footer *footer)
+Header *FooterGetHeader(Footer *footer)
 {
     Ptr ret;
     ret.as_ptr = footer;
-    uint32_t blockSize = getHeaderBlocksize(footer);
+    uint32_t blockSize = HeaderGetBlocksize(footer);
     ret.as_int -= sizeof(Footer) + blockSize;
     return ret.asHeader;
 }
@@ -131,14 +131,14 @@ int mm_init(void)
     //         (void *)(((uint64_t)heap_start & ~(ALIGNMENT - 1)) + ALIGNMENT);
     // else
     //     prologue = heap_start;
-    Ptr prologue = getPrologue();
+    Ptr prologue = MemGetPrologue();
 
     prologue.asHeader->data = 0;
     prologue.asHeader->allocated = true;
     (prologue.asFooter + 1)->data = 0;
     (prologue.asFooter + 1)->allocated = true;
 
-    Ptr epilogue = getEpilogue();
+    Ptr epilogue = MemGetEpilogue();
 
     epilogue.asHeader->data = 0;
     epilogue.asHeader->allocated = true;
@@ -164,9 +164,9 @@ Ptr extendSbrk(size_t size)
         return ret;
     }
 
-    Ptr origEpilogue = getEpilogue();
+    Ptr origEpilogue = MemGetEpilogue();
     heap_end = heap_end + size;
-    Ptr epilogue = getEpilogue();
+    Ptr epilogue = MemGetEpilogue();
     memcpy(epilogue.as_ptr, origEpilogue.as_ptr,
            sizeof(Header) + sizeof(Footer));
 
@@ -188,22 +188,22 @@ Ptr extendSbrk(size_t size)
  */
 void *mm_malloc(size_t size)
 {
-    Ptr currentBlock = getPrologue();
-    Ptr epilogue = getEpilogue();
+    Ptr currentBlock = MemGetPrologue();
+    Ptr epilogue = MemGetEpilogue();
     while (currentBlock.as_ptr != epilogue.as_ptr)
     {
         if (!currentBlock.asHeader->allocated &&
-            getHeaderBlocksize(currentBlock.asHeader) >= size)
+            HeaderGetBlocksize(currentBlock.asHeader) >= size)
         {
             currentBlock.asHeader->allocated = true;
-            Footer *footer = getFooterFromHeader(currentBlock.asHeader);
+            Footer *footer = HeaderGetFooter(currentBlock.asHeader);
             footer->allocated = true; // todo
             return currentBlock.as_ptr;
         }
         else
         {
             currentBlock.as_int += sizeof(Header) +
-                                   getHeaderBlocksize(currentBlock.asHeader) +
+                                   HeaderGetBlocksize(currentBlock.asHeader) +
                                    sizeof(Footer);
         }
     }
