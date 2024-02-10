@@ -10,6 +10,7 @@
  * comment that gives a high level description of your solution.
  */
 #include <assert.h>
+#include <cstddef>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -49,8 +50,8 @@ typedef union
     struct
     {
         bool allocated : 1;
-        bool unused1 : 1;
-        bool unused2 : 1;
+        bool unused1   : 1;
+        bool unused2   : 1;
         // uint32_t blocksize : 29;
     };
     uint32_t data;
@@ -73,23 +74,104 @@ typedef union
     };
 } Ptr;
 
-static void *true_heap_start;
-static void *heap_start; // aligned
-static void *heap_end;
+typedef struct
+{
+    Ptr RawHeapStart;
+    Ptr HeapStart; // aligned
+    Ptr HeapEnd;   // aligned
+} Mem;
+
+Mem mem;
+
+Footer *HeaderGetFooter(Header *header);
 
 Ptr MemGetPrologue()
 {
     Ptr ret;
-    ret.as_ptr = heap_start;
+    ret.as_ptr = mem.HeapStart.as_ptr;
     return ret;
 }
 
 Ptr MemGetEpilogue()
 {
     Ptr ret;
-    ret.as_ptr = heap_end;
+    ret.as_ptr = mem.HeapEnd.as_ptr;
     ret.asHeader -= 2;
     return ret;
+}
+
+void MemSetBlockData(Header *header, bool allocated, bool overrideSize,
+                     uint32_t newSize)
+{
+    Ptr footer;
+    footer.as_ptr = header;
+    if (!overrideSize)
+    {
+        footer.asFooter = HeaderGetFooter(header);
+    }
+    else
+    {
+        assert(newSize == ALIGN(newSize));
+        footer.as_int += newSize;
+    }
+    header->data = newSize;
+    header->allocated = allocated;
+    footer.asFooter->data = newSize;
+    footer.asFooter->allocated = allocated;
+}
+
+void MemSetupLayout()
+{
+    Ptr prologue = MemGetPrologue();
+    MemSetBlockData(prologue.asHeader, false, true, 0);
+
+    Ptr epilogue = MemGetEpilogue();
+    MemSetBlockData(epilogue.asHeader, false, true, 0);
+
+    Ptr blankArea;
+    blankArea.as_int = prologue.as_int + sizeof(Header) + sizeof(Footer);
+    size_t blankAreaSize =
+        epilogue.as_int - prologue.as_int - sizeof(Header) - sizeof(Footer);
+
+    Ptr blankAreaHeader = blankArea;
+    blankAreaHeader.asHeader->data = blankAreaSize;
+    blankAreaHeader.asHeader->allocated = false;
+
+    Ptr blankAreaFooter = blankArea;
+    blankAreaFooter.as_int += blankAreaSize - sizeof(Footer);
+    blankAreaFooter.asFooter->data = blankAreaSize;
+    blankAreaFooter.asFooter->allocated = false;
+}
+
+Ptr MemExtendLayout(size_t size)
+{
+    Ptr ret;
+    assert(size == ALIGN(size));
+
+    Ptr origBrk;
+    origBrk.as_ptr = mem_sbrk(size);
+    if (origBrk.as_int == -1)
+    {
+        ret.as_int = -1;
+        return ret;
+    }
+
+    Ptr origEpilogue = MemGetEpilogue();
+    mem.HeapEnd.as_int += size;
+    Ptr newEpilogue = MemGetEpilogue();
+    memcpy(newEpilogue.as_ptr, origEpilogue.as_ptr,
+           sizeof(Header) + sizeof(Footer));
+
+    Ptr blankAreaHeader = origEpilogue;
+    blankAreaHeader.asHeader->data = size - sizeof(Header) - sizeof(Footer);
+    blankAreaHeader.asHeader->allocated = false;
+
+    Ptr blankAreaFooter;
+    blankAreaFooter.as_int = newEpilogue.as_int - sizeof(Footer);
+    blankAreaFooter.asFooter->data = size - sizeof(Header) - sizeof(Footer);
+    blankAreaFooter.asFooter->allocated = false;
+
+    return blankAreaHeader;
 }
 
 uint32_t HeaderGetBlocksize(Header *header)
@@ -115,71 +197,26 @@ Header *FooterGetHeader(Footer *footer)
     return ret.asHeader;
 }
 
+void MemSplitBlock(Ptr block, size_t size)
+{
+    uint32_t blockSize = HeaderGetBlocksize(block.asHeader);
+    assert(size + sizeof(Header) + sizeof(Footer) < blockSize);
+}
+
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-    true_heap_start = mem_sbrk(CHUNKSIZE);
-    if (true_heap_start == (void *)-1)
+    mem.RawHeapStart.as_ptr = mem_sbrk(CHUNKSIZE);
+    if (mem.RawHeapStart.as_int == -1)
         return -1;
-    heap_start = (void *)ALIGN((size_t)true_heap_start);
+    mem.HeapStart.as_int = ALIGN(mem.RawHeapStart.as_int);
+    mem.HeapEnd.as_int = mem.HeapStart.as_int + CHUNKSIZE;
 
-    heap_end = heap_start + CHUNKSIZE;
-    // if ((uint64_t)heap_start & (ALIGNMENT - 1))
-    //     prologue =
-    //         (void *)(((uint64_t)heap_start & ~(ALIGNMENT - 1)) + ALIGNMENT);
-    // else
-    //     prologue = heap_start;
-    Ptr prologue = MemGetPrologue();
-
-    prologue.asHeader->data = 0;
-    prologue.asHeader->allocated = true;
-    (prologue.asFooter + 1)->data = 0;
-    (prologue.asFooter + 1)->allocated = true;
-
-    Ptr epilogue = MemGetEpilogue();
-
-    epilogue.asHeader->data = 0;
-    epilogue.asHeader->allocated = true;
-    (epilogue.asFooter + 1)->data = 0;
-    (epilogue.asFooter + 1)->allocated = true;
-
-    Ptr blankArea;
-    blankArea.as_int = prologue.as_int + sizeof(Header) + sizeof(Footer);
-    // todo
+    MemSetupLayout();
 
     return 0;
-}
-
-Ptr extendSbrk(size_t size)
-{
-    Ptr ret;
-    assert(size == ALIGN(size));
-    Ptr origBrk;
-    origBrk.as_ptr = mem_sbrk(size);
-    if (origBrk.as_int == -1)
-    {
-        ret.as_int = -1;
-        return ret;
-    }
-
-    Ptr origEpilogue = MemGetEpilogue();
-    heap_end = heap_end + size;
-    Ptr epilogue = MemGetEpilogue();
-    memcpy(epilogue.as_ptr, origEpilogue.as_ptr,
-           sizeof(Header) + sizeof(Footer));
-
-    Ptr blankArea = origEpilogue;
-    blankArea.asHeader->data = size - sizeof(Header) - sizeof(Footer);
-    blankArea.asHeader->allocated = false;
-
-    Ptr blankAreaFooter;
-    blankAreaFooter.as_int = epilogue.as_int - sizeof(Footer);
-    blankAreaFooter.asFooter->data = size - sizeof(Header) - sizeof(Footer);
-    blankAreaFooter.asFooter->allocated = false;
-
-    return blankArea;
 }
 
 /*
@@ -208,7 +245,7 @@ void *mm_malloc(size_t size)
         }
     }
     int newsize = ALIGN(size + sizeof(Header) + sizeof(Footer));
-    Ptr newBlockStart = extendSbrk(newsize);
+    Ptr newBlockStart = MemExtendLayout(newsize);
     if (newBlockStart.as_int == -1)
         return NULL;
     else
