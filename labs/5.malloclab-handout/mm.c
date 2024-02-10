@@ -83,8 +83,6 @@ typedef struct
 
 Mem mem;
 
-Footer *HeaderGetFooter(Header *header);
-
 Ptr MemGetPrologue()
 {
     Ptr ret;
@@ -98,80 +96,6 @@ Ptr MemGetEpilogue()
     ret.as_ptr = mem.HeapEnd.as_ptr;
     ret.asHeader -= 2;
     return ret;
-}
-
-void MemSetBlockData(Header *header, bool allocated, bool overrideSize,
-                     uint32_t newSize)
-{
-    Ptr footer;
-    footer.as_ptr = header;
-    if (!overrideSize)
-    {
-        footer.asFooter = HeaderGetFooter(header);
-    }
-    else
-    {
-        assert(newSize == ALIGN(newSize));
-        footer.as_int += newSize;
-    }
-    header->data = newSize;
-    header->allocated = allocated;
-    footer.asFooter->data = newSize;
-    footer.asFooter->allocated = allocated;
-}
-
-void MemSetupLayout()
-{
-    Ptr prologue = MemGetPrologue();
-    MemSetBlockData(prologue.asHeader, false, true, 0);
-
-    Ptr epilogue = MemGetEpilogue();
-    MemSetBlockData(epilogue.asHeader, false, true, 0);
-
-    Ptr blankArea;
-    blankArea.as_int = prologue.as_int + sizeof(Header) + sizeof(Footer);
-    size_t blankAreaSize =
-        epilogue.as_int - prologue.as_int - sizeof(Header) - sizeof(Footer);
-
-    Ptr blankAreaHeader = blankArea;
-    blankAreaHeader.asHeader->data = blankAreaSize;
-    blankAreaHeader.asHeader->allocated = false;
-
-    Ptr blankAreaFooter = blankArea;
-    blankAreaFooter.as_int += blankAreaSize - sizeof(Footer);
-    blankAreaFooter.asFooter->data = blankAreaSize;
-    blankAreaFooter.asFooter->allocated = false;
-}
-
-Ptr MemExtendLayout(size_t size)
-{
-    Ptr ret;
-    assert(size == ALIGN(size));
-
-    Ptr origBrk;
-    origBrk.as_ptr = mem_sbrk(size);
-    if (origBrk.as_int == -1)
-    {
-        ret.as_int = -1;
-        return ret;
-    }
-
-    Ptr origEpilogue = MemGetEpilogue();
-    mem.HeapEnd.as_int += size;
-    Ptr newEpilogue = MemGetEpilogue();
-    memcpy(newEpilogue.as_ptr, origEpilogue.as_ptr,
-           sizeof(Header) + sizeof(Footer));
-
-    Ptr blankAreaHeader = origEpilogue;
-    blankAreaHeader.asHeader->data = size - sizeof(Header) - sizeof(Footer);
-    blankAreaHeader.asHeader->allocated = false;
-
-    Ptr blankAreaFooter;
-    blankAreaFooter.as_int = newEpilogue.as_int - sizeof(Footer);
-    blankAreaFooter.asFooter->data = size - sizeof(Header) - sizeof(Footer);
-    blankAreaFooter.asFooter->allocated = false;
-
-    return blankAreaHeader;
 }
 
 uint32_t HeaderGetBlocksize(Header *header)
@@ -197,10 +121,65 @@ Header *FooterGetHeader(Footer *footer)
     return ret.asHeader;
 }
 
-void MemSplitBlock(Ptr block, size_t size)
+void MemSetBlockData(Header *header, bool allocated, uint32_t newSize)
 {
-    uint32_t blockSize = HeaderGetBlocksize(block.asHeader);
-    assert(size + sizeof(Header) + sizeof(Footer) < blockSize);
+    Ptr footer;
+    footer.as_ptr = header;
+    assert(newSize == ALIGN(newSize));
+    header->data = newSize;
+    header->allocated = allocated;
+    footer.asFooter = HeaderGetFooter(header);
+    footer.asFooter->data = header->data;
+}
+
+void MemSetupLayout()
+{
+    Ptr prologue = MemGetPrologue();
+    MemSetBlockData(prologue.asHeader, false, 0);
+
+    Ptr epilogue = MemGetEpilogue();
+    MemSetBlockData(epilogue.asHeader, false, 0);
+
+    Ptr blankArea;
+    blankArea.as_int = prologue.as_int + sizeof(Header) + sizeof(Footer);
+    size_t blankAreaSize =
+        epilogue.as_int - prologue.as_int - sizeof(Header) - sizeof(Footer);
+
+    MemSetBlockData(blankArea.asHeader, false, blankAreaSize);
+}
+
+Ptr MemExtendLayout(size_t size)
+{
+    Ptr ret;
+    assert(size == ALIGN(size));
+
+    Ptr origBrk;
+    origBrk.as_ptr = mem_sbrk(size);
+    if (origBrk.as_int == -1)
+    {
+        ret.as_int = -1;
+        return ret;
+    }
+
+    Ptr origEpilogue = MemGetEpilogue();
+    mem.HeapEnd.as_int += size;
+    Ptr newEpilogue = MemGetEpilogue();
+    memcpy(newEpilogue.as_ptr, origEpilogue.as_ptr,
+           sizeof(Header) + sizeof(Footer));
+
+    Ptr blankAreaHeader = origEpilogue;
+    MemSetBlockData(blankAreaHeader.asHeader, false,
+                    size - sizeof(Header) - sizeof(Footer));
+
+    return blankAreaHeader;
+}
+
+void MemSplitBlock(Ptr block, size_t newSize)
+{
+    uint32_t originalSize = HeaderGetBlocksize(block.asHeader);
+    assert(newSize == ALIGN(newSize));
+    assert(newSize + sizeof(Header) + sizeof(Footer) < originalSize);
+    MemSetBlockData(block.asHeader, block.asHeader->allocated, newSize);
 }
 
 /*
