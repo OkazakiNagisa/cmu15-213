@@ -1,21 +1,6 @@
 {
-    "cmake.buildDirectory": "${workspaceFolder}/build",
-    "cmake.debugConfig": {
-        "stopAtEntry": false,
-        "console": "integratedTerminal"
-    },
-    "clangd.arguments": [],
-    "lldb.displayFormat": "auto",
-    "lldb.showDisassembly": "auto",
-    "lldb.dereferencePointers": true,
-    "lldb.consoleMode": "evaluate",
-    "sshfs.configs": [
-        {
-            "name": "unnamed",
-            "host": "10.100.128.0",
-            "root": "~",
-            "username": "nakido",
-            "password": "121212"
-        }
-    ]
+    "cmake.sourceDirectory": "${workspaceFolder}/cxx-scaffold",
+    "git.ignoredRepositories": [
+        "cxx-scaffold"
+    ],
 }

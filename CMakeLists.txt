@@ -1,7 +1,7 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.23)
 project("CMU15-213")
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/modules")
-include(add_targets)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 20)
 
-add_subdirectory("pv")
+add_targets(SCAN_SINGLE_FILE SSF_PATTERN *.single.c SUBDIR pv TARGET_PREFIX pv.)
