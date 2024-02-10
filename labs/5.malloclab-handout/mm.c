@@ -236,6 +236,34 @@ void MemFreeBlock(Header *blockHeader)
         MemMergeFreeBlocks(prevHeader, true);
 }
 
+// return true = succ
+bool MemTryEnlargeBlock(Header *blockHeader, size_t increment)
+{
+    assert(increment == ALIGN(increment));
+    uint32_t origSize = HeaderGetBlocksize(blockHeader);
+    uint32_t desiredSize = origSize + increment;
+    Header *nextHeader = HeaderGetNextHeader(blockHeader);
+    uint32_t nextBlockSize = HeaderGetBlocksize(nextHeader);
+
+    if (nextBlockSize < increment)
+        return false;
+
+}
+
+bool MemTryShrinkBlock(Header *blockHeader, size_t decrement)
+{
+    assert(decrement == ALIGN(decrement));
+    uint32_t origSize = HeaderGetBlocksize(blockHeader);
+    assert(decrement < origSize);
+    uint32_t desiredSize = origSize - decrement;
+
+    if (desiredSize + sizeof(Header) + sizeof(Footer) >= origSize)
+        return false;
+
+    MemSplitBlock(blockHeader, desiredSize);
+    return true;
+}
+
 /*
  * mm_init - initialize the malloc package.
  */
@@ -258,10 +286,12 @@ void *mm_malloc(size_t size)
         if (!currentBlock.asHeader->allocated &&
             HeaderGetBlocksize(currentBlock.asHeader) >= size)
         {
-            if (size + sizeof(Header) + sizeof(Footer) < HeaderGetBlocksize(currentBlock.asHeader))
+            if (size + sizeof(Header) + sizeof(Footer) <
+                HeaderGetBlocksize(currentBlock.asHeader))
             {
                 MemSplitBlock(currentBlock.asHeader, size);
             }
+            currentBlock.asHeader++;
             return currentBlock.as_ptr;
         }
         else
@@ -277,6 +307,7 @@ void *mm_malloc(size_t size)
     {
         MemSetBlockData(newBlockStart.asHeader, true,
                         HeaderGetBlocksize(newBlockStart.asHeader));
+        currentBlock.asHeader++;
         return newBlockStart.as_ptr;
     }
 }
@@ -286,7 +317,9 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-    MemFreeBlock((Header *)ptr);
+    Header *header = ptr;
+    header--;
+    MemFreeBlock(header);
 }
 
 /*
@@ -294,7 +327,13 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+    Header *header = ptr;
+    header--;
+    uint32_t blockSize = HeaderGetBlocksize(header);
 
+    if (size <= blockSize)
+    {
+    }
     // void *oldptr = ptr;
     // void *newptr;
     // size_t copySize;
