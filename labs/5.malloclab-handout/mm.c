@@ -121,6 +121,23 @@ Header *FooterGetHeader(Footer *footer)
     return ret.asHeader;
 }
 
+Header *HeaderGetNextHeader(Header *header)
+{
+    Ptr ret;
+    ret.as_ptr = header;
+    uint32_t blockSize = HeaderGetBlocksize(header);
+    ret.as_int += sizeof(Header) + blockSize + sizeof(Footer);
+    return ret.asHeader;
+}
+
+Header *HeaderGetPreviousHeader(Header *header)
+{
+    Ptr ret;
+    ret.as_ptr = header;
+    Footer *prevFooter = ret.asHeader - 1;
+    return FooterGetHeader(prevFooter);
+}
+
 void MemSetBlockData(Header *header, bool allocated, uint32_t newSize)
 {
     Ptr footer;
@@ -132,8 +149,16 @@ void MemSetBlockData(Header *header, bool allocated, uint32_t newSize)
     footer.asFooter->data = header->data;
 }
 
-void MemSetupLayout()
+int32_t MemSetupLayout()
 {
+    // sbrk
+    mem.RawHeapStart.as_ptr = mem_sbrk(CHUNKSIZE);
+    if (mem.RawHeapStart.as_int == -1)
+        return -1;
+    mem.HeapStart.as_int = ALIGN(mem.RawHeapStart.as_int);
+    mem.HeapEnd.as_int = mem.HeapStart.as_int + CHUNKSIZE;
+
+    // layout
     Ptr prologue = MemGetPrologue();
     MemSetBlockData(prologue.asHeader, false, 0);
 
@@ -146,40 +171,69 @@ void MemSetupLayout()
         epilogue.as_int - prologue.as_int - sizeof(Header) - sizeof(Footer);
 
     MemSetBlockData(blankArea.asHeader, false, blankAreaSize);
+
+    return 0;
 }
 
-Ptr MemExtendLayout(size_t size)
+int32_t MemExtendLayout(size_t desiredSize)
 {
-    Ptr ret;
-    assert(size == ALIGN(size));
+    assert(desiredSize == ALIGN(desiredSize));
 
+    // sbrk
     Ptr origBrk;
-    origBrk.as_ptr = mem_sbrk(size);
+    origBrk.as_ptr = mem_sbrk(desiredSize + sizeof(Header) + sizeof(Footer));
     if (origBrk.as_int == -1)
-    {
-        ret.as_int = -1;
-        return ret;
-    }
+        return -1;
 
+    // layout
     Ptr origEpilogue = MemGetEpilogue();
-    mem.HeapEnd.as_int += size;
+    mem.HeapEnd.as_int += desiredSize + sizeof(Header) + sizeof(Footer);
     Ptr newEpilogue = MemGetEpilogue();
     memcpy(newEpilogue.as_ptr, origEpilogue.as_ptr,
            sizeof(Header) + sizeof(Footer));
 
     Ptr blankAreaHeader = origEpilogue;
-    MemSetBlockData(blankAreaHeader.asHeader, false,
-                    size - sizeof(Header) - sizeof(Footer));
+    MemSetBlockData(blankAreaHeader.asHeader, false, desiredSize);
 
-    return blankAreaHeader;
+    return blankAreaHeader.as_int;
 }
 
-void MemSplitBlock(Ptr block, size_t newSize)
+Header *MemSplitBlock(Header *blockHeader, size_t firstBlockSize)
 {
-    uint32_t originalSize = HeaderGetBlocksize(block.asHeader);
-    assert(newSize == ALIGN(newSize));
-    assert(newSize + sizeof(Header) + sizeof(Footer) < originalSize);
-    MemSetBlockData(block.asHeader, block.asHeader->allocated, newSize);
+    uint32_t origSize = HeaderGetBlocksize(blockHeader);
+    assert(firstBlockSize == ALIGN(firstBlockSize));
+    assert(firstBlockSize + sizeof(Header) + sizeof(Footer) < origSize);
+    MemSetBlockData(blockHeader, blockHeader->allocated, firstBlockSize);
+
+    uint32_t nextBlockSize =
+        origSize - firstBlockSize - sizeof(Header) - sizeof(Footer);
+    Header *nextHeader = HeaderGetNextHeader(blockHeader);
+    MemSetBlockData(nextHeader, false, nextBlockSize);
+
+    return nextHeader;
+}
+
+void MemMergeFreeBlocks(Header *blockHeader, bool mergePrevious)
+{
+    Header *first =
+        mergePrevious ? HeaderGetPreviousHeader(blockHeader) : blockHeader;
+    Header *second =
+        mergePrevious ? blockHeader : HeaderGetNextHeader(blockHeader);
+    assert(!first->allocated && !second->allocated);
+    MemSetBlockData(first, false,
+                    HeaderGetBlocksize(first) + HeaderGetBlocksize(second));
+}
+
+void MemFreeBlock(Header *blockHeader)
+{
+    assert(blockHeader->allocated);
+    MemSetBlockData(blockHeader, false, HeaderGetBlocksize(blockHeader));
+    Header *prevHeader = HeaderGetPreviousHeader(blockHeader);
+    Header *nextHeader = HeaderGetNextHeader(blockHeader);
+    if (!nextHeader->allocated)
+        MemMergeFreeBlocks(blockHeader, false);
+    if (!prevHeader->allocated)
+        MemMergeFreeBlocks(prevHeader, true);
 }
 
 /*
@@ -187,15 +241,7 @@ void MemSplitBlock(Ptr block, size_t newSize)
  */
 int mm_init(void)
 {
-    mem.RawHeapStart.as_ptr = mem_sbrk(CHUNKSIZE);
-    if (mem.RawHeapStart.as_int == -1)
-        return -1;
-    mem.HeapStart.as_int = ALIGN(mem.RawHeapStart.as_int);
-    mem.HeapEnd.as_int = mem.HeapStart.as_int + CHUNKSIZE;
-
-    MemSetupLayout();
-
-    return 0;
+    return MemSetupLayout();
 }
 
 /*
@@ -204,6 +250,7 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
+    size = ALIGN(size);
     Ptr currentBlock = MemGetPrologue();
     Ptr epilogue = MemGetEpilogue();
     while (currentBlock.as_ptr != epilogue.as_ptr)
@@ -211,51 +258,56 @@ void *mm_malloc(size_t size)
         if (!currentBlock.asHeader->allocated &&
             HeaderGetBlocksize(currentBlock.asHeader) >= size)
         {
-            currentBlock.asHeader->allocated = true;
-            Footer *footer = HeaderGetFooter(currentBlock.asHeader);
-            footer->allocated = true; // todo
+            if (size + sizeof(Header) + sizeof(Footer) < HeaderGetBlocksize(currentBlock.asHeader))
+            {
+                MemSplitBlock(currentBlock.asHeader, size);
+            }
             return currentBlock.as_ptr;
         }
         else
         {
-            currentBlock.as_int += sizeof(Header) +
-                                   HeaderGetBlocksize(currentBlock.asHeader) +
-                                   sizeof(Footer);
+            currentBlock.asHeader = HeaderGetNextHeader(currentBlock.asHeader);
         }
     }
-    int newsize = ALIGN(size + sizeof(Header) + sizeof(Footer));
-    Ptr newBlockStart = MemExtendLayout(newsize);
+    Ptr newBlockStart;
+    newBlockStart.as_int = MemExtendLayout(ALIGN(size));
     if (newBlockStart.as_int == -1)
         return NULL;
     else
     {
-        newBlockStart.asHeader->allocated = true; // todo
+        MemSetBlockData(newBlockStart.asHeader, true,
+                        HeaderGetBlocksize(newBlockStart.asHeader));
+        return newBlockStart.as_ptr;
     }
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
-void mm_free(void *ptr) {}
+void mm_free(void *ptr)
+{
+    MemFreeBlock((Header *)ptr);
+}
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-        return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-        copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
+    // void *oldptr = ptr;
+    // void *newptr;
+    // size_t copySize;
+
+    // newptr = mm_malloc(size);
+    // if (newptr == NULL)
+    //     return NULL;
+    // copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+    // if (size < copySize)
+    //     copySize = size;
+    // memcpy(newptr, oldptr, copySize);
+    // mm_free(oldptr);
+    // return newptr;
 }
 
 size_t mm_check()
