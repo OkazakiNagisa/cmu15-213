@@ -43,6 +43,8 @@ team_t team = {
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size_t)(size) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1))
+#define ALIGN_CHUNK(size)                                                      \
+    (((size_t)(size) + (CHUNKSIZE - 1)) & ~(CHUNKSIZE - 1))
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 typedef union
@@ -56,12 +58,6 @@ typedef union
     };
     uint32_t data;
 } Header, Footer;
-
-typedef struct
-{
-    Header header;
-    unsigned char memory[1];
-} Block;
 
 typedef union
 {
@@ -138,15 +134,13 @@ Header *HeaderGetPreviousHeader(Header *header)
     return FooterGetHeader(prevFooter);
 }
 
-void MemSetBlockData(Header *header, bool allocated, uint32_t newSize)
+void MemSetBlockData(Header *header, bool allocated, uint32_t size)
 {
-    Ptr footer;
-    footer.as_ptr = header;
-    assert(newSize == ALIGN(newSize));
-    header->data = newSize;
+    assert(size == ALIGN(size));
+    header->data = size;
     header->allocated = allocated;
-    footer.asFooter = HeaderGetFooter(header);
-    footer.asFooter->data = header->data;
+    Footer *footer = HeaderGetFooter(header);
+    footer->data = header->data;
 }
 
 int32_t MemSetupLayout()
@@ -175,27 +169,30 @@ int32_t MemSetupLayout()
     return 0;
 }
 
-int32_t MemExtendLayout(size_t desiredSize)
+Header *MemExtendLayout(size_t leastSize)
 {
-    assert(desiredSize == ALIGN(desiredSize));
+    size_t extendedSize =
+        ALIGN_CHUNK(leastSize + sizeof(Header) + sizeof(Footer));
+    assert(extendedSize == ALIGN(extendedSize));
 
     // sbrk
     Ptr origBrk;
-    origBrk.as_ptr = mem_sbrk(desiredSize + sizeof(Header) + sizeof(Footer));
+    origBrk.as_ptr = mem_sbrk(extendedSize);
     if (origBrk.as_int == -1)
-        return -1;
+        return origBrk.as_ptr;
 
     // layout
     Ptr origEpilogue = MemGetEpilogue();
-    mem.HeapEnd.as_int += desiredSize + sizeof(Header) + sizeof(Footer);
+    mem.HeapEnd.as_int += extendedSize;
     Ptr newEpilogue = MemGetEpilogue();
     memcpy(newEpilogue.as_ptr, origEpilogue.as_ptr,
            sizeof(Header) + sizeof(Footer));
 
     Ptr blankAreaHeader = origEpilogue;
-    MemSetBlockData(blankAreaHeader.asHeader, false, desiredSize);
+    MemSetBlockData(blankAreaHeader.asHeader, false,
+                    extendedSize - sizeof(Header) - sizeof(Footer));
 
-    return blankAreaHeader.as_int;
+    return blankAreaHeader.asHeader;
 }
 
 Header *MemSplitBlock(Header *blockHeader, size_t firstBlockSize)
@@ -213,15 +210,17 @@ Header *MemSplitBlock(Header *blockHeader, size_t firstBlockSize)
     return nextHeader;
 }
 
-void MemMergeFreeBlocks(Header *blockHeader, bool mergePrevious)
+void MemMergeBlocks(Header *blockHeader, bool mergePrevious,
+                    bool mergedBlockAllocated)
 {
     Header *first =
         mergePrevious ? HeaderGetPreviousHeader(blockHeader) : blockHeader;
     Header *second =
         mergePrevious ? blockHeader : HeaderGetNextHeader(blockHeader);
-    assert(!first->allocated && !second->allocated);
-    MemSetBlockData(first, false,
-                    HeaderGetBlocksize(first) + HeaderGetBlocksize(second));
+    assert(!second->allocated);
+    MemSetBlockData(first, mergedBlockAllocated,
+                    HeaderGetBlocksize(first) + HeaderGetBlocksize(second) +
+                        sizeof(Header) + sizeof(Footer));
 }
 
 void MemFreeBlock(Header *blockHeader)
@@ -231,9 +230,9 @@ void MemFreeBlock(Header *blockHeader)
     Header *prevHeader = HeaderGetPreviousHeader(blockHeader);
     Header *nextHeader = HeaderGetNextHeader(blockHeader);
     if (!nextHeader->allocated)
-        MemMergeFreeBlocks(blockHeader, false);
+        MemMergeBlocks(blockHeader, false, false);
     if (!prevHeader->allocated)
-        MemMergeFreeBlocks(prevHeader, true);
+        MemMergeBlocks(prevHeader, true, false);
 }
 
 // return true = succ
@@ -245,9 +244,22 @@ bool MemTryEnlargeBlock(Header *blockHeader, size_t increment)
     Header *nextHeader = HeaderGetNextHeader(blockHeader);
     uint32_t nextBlockSize = HeaderGetBlocksize(nextHeader);
 
-    if (nextBlockSize < increment)
-        return false;
-
+    if (increment > nextBlockSize)
+    {
+        if (increment <= nextBlockSize + sizeof(Header) + sizeof(Footer))
+        {
+            MemMergeBlocks(blockHeader, false, blockHeader->allocated);
+            return true;
+        }
+        else
+            return false;
+    }
+    else
+    {
+        MemMergeBlocks(blockHeader, false, blockHeader->allocated);
+        MemSplitBlock(blockHeader, desiredSize);
+        return true;
+    }
 }
 
 bool MemTryShrinkBlock(Header *blockHeader, size_t decrement)
@@ -286,11 +298,9 @@ void *mm_malloc(size_t size)
         if (!currentBlock.asHeader->allocated &&
             HeaderGetBlocksize(currentBlock.asHeader) >= size)
         {
-            if (size + sizeof(Header) + sizeof(Footer) <
-                HeaderGetBlocksize(currentBlock.asHeader))
-            {
-                MemSplitBlock(currentBlock.asHeader, size);
-            }
+            MemTryShrinkBlock(currentBlock.asHeader, size);
+            MemSetBlockData(currentBlock.asHeader, true,
+                            HeaderGetBlocksize(currentBlock.asHeader));
             currentBlock.asHeader++;
             return currentBlock.as_ptr;
         }
@@ -300,11 +310,12 @@ void *mm_malloc(size_t size)
         }
     }
     Ptr newBlockStart;
-    newBlockStart.as_int = MemExtendLayout(ALIGN(size));
+    newBlockStart.asHeader = MemExtendLayout(size);
     if (newBlockStart.as_int == -1)
         return NULL;
     else
     {
+        MemSplitBlock(newBlockStart.asHeader, size);
         MemSetBlockData(newBlockStart.asHeader, true,
                         HeaderGetBlocksize(newBlockStart.asHeader));
         currentBlock.asHeader++;
