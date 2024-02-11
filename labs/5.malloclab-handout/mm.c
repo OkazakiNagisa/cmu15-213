@@ -10,7 +10,7 @@
  * comment that gives a high level description of your solution.
  */
 #include <assert.h>
-#include <cstddef>
+#include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -54,9 +54,9 @@ typedef union
         bool allocated : 1;
         bool unused1   : 1;
         bool unused2   : 1;
-        // uint32_t blocksize : 29;
     };
     size_t data;
+    uint64_t for_padding;
 } Header, Footer;
 
 typedef union
@@ -78,6 +78,8 @@ typedef struct
 } Mem;
 
 Mem mem;
+
+int32_t mm_check();
 
 Ptr MemGetPrologue()
 {
@@ -167,6 +169,7 @@ bool MemSetupLayout()
 
     MemSetBlockData(blankArea.asHeader, false, blankAreaSize);
 
+    assert(!mm_check());
     return true;
 }
 
@@ -193,6 +196,7 @@ Header *MemExtendLayout(size_t leastSize)
     MemSetBlockData(blankAreaHeader.asHeader, false,
                     extendedSize - sizeof(Header) - sizeof(Footer));
 
+    assert(!mm_check());
     return blankAreaHeader.asHeader;
 }
 
@@ -208,6 +212,7 @@ Header *MemSplitBlock(Header *blockHeader, size_t firstBlockSize)
     Header *nextHeader = HeaderGetNextHeader(blockHeader);
     MemSetBlockData(nextHeader, false, nextBlockSize);
 
+    assert(!mm_check());
     return nextHeader;
 }
 
@@ -222,6 +227,7 @@ void MemMergeBlocks(Header *blockHeader, bool mergePrevious,
     MemSetBlockData(first, mergedBlockAllocated,
                     HeaderGetBlocksize(first) + HeaderGetBlocksize(second) +
                         sizeof(Header) + sizeof(Footer));
+    assert(!mm_check());
 }
 
 void MemFreeBlock(Header *blockHeader)
@@ -274,6 +280,7 @@ bool MemTryShrinkBlock(Header *blockHeader, size_t decrement)
         return false;
 
     MemSplitBlock(blockHeader, desiredSize);
+    assert(!mm_check());
     return true;
 }
 
@@ -387,17 +394,34 @@ int32_t mm_check()
         Footer *currentBlockFooter = HeaderGetFooter(currentBlockHeader);
 
         if (currentBlockHeader->data != currentBlockFooter->data)
+        {
+            printf("!");
             return 1;
+        }
+
+        if (currentBlockHeader->data == 0 &&
+            currentBlockHeader != MemGetPrologue().asHeader &&
+            currentBlockHeader != MemGetEpilogue().asHeader)
+        {
+            printf("!");
+            return 1;
+        }
 
         if (HeaderGetNextHeader(currentBlockHeader) !=
             currentBlock.as_ptr + currentBlockSize + sizeof(Header) +
                 sizeof(Footer))
+        {
+            printf("!");
             return 1;
+        }
         currentBlock.as_ptr = HeaderGetNextHeader(currentBlockHeader);
     }
 
     if (currentBlock.as_ptr != end.as_ptr)
+    {
+        printf("!");
         return 1;
+    }
 
     return 0;
 }
